@@ -1,0 +1,764 @@
+{
+  "id": "marcofgv/google-ads-watch",
+  "slug": "google-ads-watch",
+  "version": "0.3.2",
+  "license": "mit",
+  "license_required": false,
+  "description": "Ad Spend Watch — free read-only visibility for Google Ads™ (API v25): give your AI agent full read-only visibility into Google Ads: spend, performance, budgets, keywords, negatives, ads, audiences, conversions, assets, Google's own recommendations, change history, account metadata (currency + test-vs-live) and shared-budget blast radius, plus a SELECT-only GAQL escape hatch. 22 reads, side_effects=none, zero writes — the agent can WATCH runaway spend (get_account_spend_today is the single number to guard) but cannot touch a cent. Egress allowlisted to the Google Ads + OAuth hosts only; credentials via BYOK vault, never logged. The paid companion Google Ads Airlock adds the 18 governed writes behind RailCall's airlock. Status: functional against API v25 with an offline contract test; pending live test-account proof. Independent product; NOT affiliated with, endorsed by, or sponsored by Google LLC. 'Google Ads' is a trademark of Google LLC, used only to describe compatibility. BYOK.",
+  "category": "Marketing",
+  "provider": "google-ads",
+  "credential_spec": {
+    "provider": "google-ads",
+    "category": "Advertising",
+    "name": "Google Ads (developer token + OAuth2)",
+    "required": [
+      "developer_token",
+      "client_id",
+      "client_secret",
+      "refresh_token"
+    ],
+    "any_of": [
+      [
+        "developer_token",
+        "client_id",
+        "client_secret",
+        "refresh_token"
+      ],
+      [
+        "developer_token",
+        "access_token"
+      ]
+    ],
+    "optional": [
+      "access_token",
+      "login_customer_id"
+    ],
+    "shape": "dict",
+    "risk": "high",
+    "read_write": "write"
+  },
+  "allowed_destinations": [
+    {
+      "provider": "google-ads",
+      "hosts": [
+        "googleads.googleapis.com",
+        "oauth2.googleapis.com"
+      ]
+    }
+  ],
+  "requires": {
+    "network": [
+      "googleads.googleapis.com",
+      "oauth2.googleapis.com"
+    ],
+    "subprocess": false,
+    "filesystem_writes": []
+  },
+  "commands": [
+    {
+      "id": "list_campaigns",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_campaigns",
+      "title": "List campaigns",
+      "description": "List campaigns with status, channel type, bidding strategy and current daily budget. The agent's starting map.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_campaign",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_campaign",
+      "title": "Get campaign",
+      "description": "Full detail for one campaign: status, budget, bidding strategy, targeting summary, start/end dates.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_budget",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_budget",
+      "title": "Get campaign budget",
+      "description": "Current daily/total budget (micros), delivery method and whether it is shared. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_spend",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_spend",
+      "title": "Spend & performance",
+      "description": "Cost, impressions, clicks, CTR, conversions, CPA and ROAS for a campaign over a date range — the numbers the agent optimizes against.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        },
+        "required": [
+          "account",
+          "since",
+          "until"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_account_spend_today",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_account_spend_today",
+      "title": "Account spend today",
+      "description": "Total cost accrued so far TODAY for the whole account — the single number to watch for a runaway. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "list_ad_groups",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_ad_groups",
+      "title": "List ad groups",
+      "description": "Ad groups under a campaign with status and CPC/CPA bids. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_ad_group",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_ad_group",
+      "title": "Get ad group",
+      "description": "One ad group's status, bids and targeting. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_keywords",
+      "title": "List keywords",
+      "description": "Keywords in an ad group with match type, status, bid and quality score. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_negative_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_negative_keywords",
+      "title": "List negative keywords",
+      "description": "Campaign/ad-group negative keywords. Read-only — what the account is already excluding.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id (optional filter)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_ads",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_ads",
+      "title": "List ads",
+      "description": "Ads in an ad group with type, status and approval state. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_ad",
+      "title": "Get ad",
+      "description": "One ad's full creative (headlines, descriptions, final URL) and policy status. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad": {
+            "type": "string",
+            "description": "Ad id"
+          }
+        },
+        "required": [
+          "account",
+          "ad"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_audiences",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_audiences",
+      "title": "List audiences",
+      "description": "Audience segments available/attached in the account. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_conversion_actions",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_conversion_actions",
+      "title": "List conversion actions",
+      "description": "Conversion actions with category, status and counting settings. Read-only — what 'a conversion' means for ROAS.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_conversion_stats",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_conversion_stats",
+      "title": "Conversion stats",
+      "description": "Conversions, conversion value and value/cost for a campaign over a date range. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id (optional filter)"
+          },
+          "by_action": {
+            "type": "boolean",
+            "description": "Break conversions down by conversion action name."
+          }
+        },
+        "required": [
+          "account",
+          "since",
+          "until"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_assets",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_assets",
+      "title": "List assets / extensions",
+      "description": "Sitelinks, callouts, structured snippets and other assets on the account. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_recommendations",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_recommendations",
+      "title": "Get recommendations",
+      "description": "Google's own optimization recommendations (budget raises, new keywords, bid changes) WITH their estimated impact. Read-only — applying one is a separate airlocked write.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_change_history",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_change_history",
+      "title": "Change history",
+      "description": "Recent changes on the account (who/what/when) over a date range — the audit view your agent should read before acting. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "days": {
+            "type": "integer",
+            "description": "Look-back window in days (GAQL enum: 7, 14, or 30)",
+            "enum": [
+              7,
+              14,
+              30
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Max events to return (default 200)."
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "search_gaql",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "search_gaql",
+      "title": "Run a GAQL read query",
+      "description": "Power-user read: run a Google Ads Query Language SELECT and return rows. SELECT-only — mutating GAQL is rejected. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "query": {
+            "type": "string",
+            "description": "A GAQL SELECT statement",
+            "examples": [
+              "SELECT campaign.name, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_7_DAYS"
+            ]
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "description": "Max rows to return (default 1000, capped 50000)."
+          }
+        },
+        "required": [
+          "account",
+          "query"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_search_terms",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_search_terms",
+      "title": "Search terms report",
+      "description": "The actual search queries that triggered your ads, with cost and clicks — the basis for spotting wasted spend and negative-keyword candidates. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Customer id, digits only"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Optional campaign id filter"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD (defaults to last 30 days)",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 200
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_accessible_customers",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_accessible_customers",
+      "title": "List accessible customers",
+      "description": "Customer accounts this token can reach (MCC discovery). Call first to know which accounts you may act on. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_account_metadata",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_account_metadata",
+      "title": "Get account metadata",
+      "description": "Currency, time zone and TEST-vs-LIVE status of the account, plus manager/auto-tagging flags — so a budget number is never ambiguous. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "list_budget_campaigns",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_budget_campaigns",
+      "title": "List campaigns on a budget (shared-budget blast radius)",
+      "description": "Every campaign attached to a given budget — shows whether changing that budget hits one campaign or many. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only"
+          },
+          "budget_id": {
+            "type": "string",
+            "description": "Campaign budget id"
+          }
+        },
+        "required": [
+          "account",
+          "budget_id"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    }
+  ],
+  "publisher_pubkey": "9fdc80319ef8b36532af11a4c95590d3c0061dc91fc3c2c43e5ff4f4989cb015",
+  "manifest_version": 2
+}

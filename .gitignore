@@ -1,0 +1,22 @@
+# never commit credentials, vault files, receipts, or local state
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+credentials*.json
+keys*.json
+token*.json
+*refresh_token*
+*.bak
+*.bak.*
+.railcall/
+.railcall_workspace/
+receipts/
+*.receipt.json
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+node_modules/

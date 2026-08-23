@@ -1,0 +1,1560 @@
+{
+  "id": "marcofgv/google-ads-airlock",
+  "slug": "google-ads-airlock",
+  "version": "0.2.2",
+  "license": "proprietary",
+  "license_required": true,
+  "description": "Ad Spend Airlock — governed automation for Google Ads™ (API v25): the deep, governed Google Ads module: let an AI agent run campaigns, keywords, bids and creatives without ever letting it silently burn your budget. 40 commands: 22 reads (side_effects=none — spend, performance, budgets, keywords, conversions, recommendations, change history, account metadata incl. currency/test-vs-live, shared-budget blast radius, and a SELECT-only GAQL query) so the agent optimizes freely; 18 writes (mode=write_requires_approval) so every money-moving change stops at RailCall's airlock: dry-run preview (Google validateOnly, nothing changes) -> human approve -> execute -> Ed25519 signed receipt. Every budget raise, bid change, new keyword, applied recommendation and published ad shows the exact old->new before it fires; new campaigns and ads are created PAUSED. 2026's #1 agent failure is runaway spend (recursive loops burning five figures in a weekend); this is the ceiling that stops it, and the signed audit trail gives a human-in-the-loop record for review (not a certified compliance product). Egress is allowlisted to the Google Ads + OAuth hosts only (SSRF closed); credentials resolve via BYOK vault at 127.0.0.1 and are never logged (redacted from errors); no subprocess, no filesystem writes. Spend note: budgets/bids are in the ACCOUNT's currency micros, not USD cents, so a numeric cents cap does not map — the airlock's human approval is the authoritative spend gate. Free companion module Google Ads Watch ships the 22 reads at no cost; this paid module adds the 16 airlocked writes. Status: functional against API v25 with a full offline contract test; pending live test-account proof. Independent product; NOT affiliated with, endorsed by, or sponsored by Google LLC. 'Google Ads' is a trademark of Google LLC, used only to describe compatibility. BYOK.",
+  "category": "Marketing",
+  "provider": "google-ads",
+  "credential_spec": {
+    "provider": "google-ads",
+    "category": "Advertising",
+    "name": "Google Ads (developer token + OAuth2)",
+    "required": [
+      "developer_token",
+      "client_id",
+      "client_secret",
+      "refresh_token"
+    ],
+    "any_of": [
+      [
+        "developer_token",
+        "client_id",
+        "client_secret",
+        "refresh_token"
+      ],
+      [
+        "developer_token",
+        "access_token"
+      ]
+    ],
+    "optional": [
+      "access_token",
+      "login_customer_id"
+    ],
+    "shape": "dict",
+    "risk": "high",
+    "read_write": "write"
+  },
+  "allowed_destinations": [
+    {
+      "provider": "google-ads",
+      "hosts": [
+        "googleads.googleapis.com",
+        "oauth2.googleapis.com"
+      ]
+    }
+  ],
+  "requires": {
+    "network": [
+      "googleads.googleapis.com",
+      "oauth2.googleapis.com"
+    ],
+    "subprocess": false,
+    "filesystem_writes": []
+  },
+  "commands": [
+    {
+      "id": "list_campaigns",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_campaigns",
+      "title": "List campaigns",
+      "description": "List campaigns with status, channel type, bidding strategy and current daily budget. The agent's starting map.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_campaign",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_campaign",
+      "title": "Get campaign",
+      "description": "Full detail for one campaign: status, budget, bidding strategy, targeting summary, start/end dates.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_budget",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_budget",
+      "title": "Get campaign budget",
+      "description": "Current daily/total budget (micros), delivery method and whether it is shared. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_spend",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_spend",
+      "title": "Spend & performance",
+      "description": "Cost, impressions, clicks, CTR, conversions, CPA and ROAS for a campaign over a date range — the numbers the agent optimizes against.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        },
+        "required": [
+          "account",
+          "since",
+          "until"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_account_spend_today",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_account_spend_today",
+      "title": "Account spend today",
+      "description": "Total cost accrued so far TODAY for the whole account — the single number to watch for a runaway. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "list_ad_groups",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_ad_groups",
+      "title": "List ad groups",
+      "description": "Ad groups under a campaign with status and CPC/CPA bids. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_ad_group",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_ad_group",
+      "title": "Get ad group",
+      "description": "One ad group's status, bids and targeting. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_keywords",
+      "title": "List keywords",
+      "description": "Keywords in an ad group with match type, status, bid and quality score. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_negative_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_negative_keywords",
+      "title": "List negative keywords",
+      "description": "Campaign/ad-group negative keywords. Read-only — what the account is already excluding.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id (optional filter)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_ads",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_ads",
+      "title": "List ads",
+      "description": "Ads in an ad group with type, status and approval state. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_ad",
+      "title": "Get ad",
+      "description": "One ad's full creative (headlines, descriptions, final URL) and policy status. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad": {
+            "type": "string",
+            "description": "Ad id"
+          }
+        },
+        "required": [
+          "account",
+          "ad"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_audiences",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_audiences",
+      "title": "List audiences",
+      "description": "Audience segments available/attached in the account. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_conversion_actions",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_conversion_actions",
+      "title": "List conversion actions",
+      "description": "Conversion actions with category, status and counting settings. Read-only — what 'a conversion' means for ROAS.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_conversion_stats",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_conversion_stats",
+      "title": "Conversion stats",
+      "description": "Conversions, conversion value and value/cost for a campaign over a date range. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "examples": [
+              "2026-08-01"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id (optional filter)"
+          },
+          "by_action": {
+            "type": "boolean",
+            "description": "Break conversions down by conversion action name."
+          }
+        },
+        "required": [
+          "account",
+          "since",
+          "until"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_assets",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_assets",
+      "title": "List assets / extensions",
+      "description": "Sitelinks, callouts, structured snippets and other assets on the account. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_recommendations",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_recommendations",
+      "title": "Get recommendations",
+      "description": "Google's own optimization recommendations (budget raises, new keywords, bid changes) WITH their estimated impact. Read-only — applying one is a separate airlocked write.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "get_change_history",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_change_history",
+      "title": "Change history",
+      "description": "Recent changes on the account (who/what/when) over a date range — the audit view your agent should read before acting. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "days": {
+            "type": "integer",
+            "description": "Look-back window in days (GAQL enum: 7, 14, or 30)",
+            "enum": [
+              7,
+              14,
+              30
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Max events to return (default 200)."
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "search_gaql",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "search_gaql",
+      "title": "Run a GAQL read query",
+      "description": "Power-user read: run a Google Ads Query Language SELECT and return rows. SELECT-only — mutating GAQL is rejected. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "query": {
+            "type": "string",
+            "description": "A GAQL SELECT statement",
+            "examples": [
+              "SELECT campaign.name, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_7_DAYS"
+            ]
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "description": "Max rows to return (default 1000, capped 50000)."
+          }
+        },
+        "required": [
+          "account",
+          "query"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_search_terms",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_search_terms",
+      "title": "Search terms report",
+      "description": "The actual search queries that triggered your ads, with cost and clicks — the basis for spotting wasted spend and negative-keyword candidates. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Customer id, digits only"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Optional campaign id filter"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD (defaults to last 30 days)",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO date YYYY-MM-DD",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 200
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "list_accessible_customers",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_accessible_customers",
+      "title": "List accessible customers",
+      "description": "Customer accounts this token can reach (MCC discovery). Call first to know which accounts you may act on. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "get_account_metadata",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "get_account_metadata",
+      "title": "Get account metadata",
+      "description": "Currency, time zone and TEST-vs-LIVE status of the account, plus manager/auto-tagging flags — so a budget number is never ambiguous. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "medium"
+    },
+    {
+      "id": "list_budget_campaigns",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "list_budget_campaigns",
+      "title": "List campaigns on a budget (shared-budget blast radius)",
+      "description": "Every campaign attached to a given budget — shows whether changing that budget hits one campaign or many. Read-only.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only"
+          },
+          "budget_id": {
+            "type": "string",
+            "description": "Campaign budget id"
+          }
+        },
+        "required": [
+          "account",
+          "budget_id"
+        ]
+      },
+      "side_effects": "none",
+      "mode": "read",
+      "risk": "low"
+    },
+    {
+      "id": "create_budget",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "create_budget",
+      "title": "Create campaign budget",
+      "description": "Create a non-shared daily budget (prerequisite for create_campaign). Airlocked.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Customer id, digits only"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Daily budget in account currency units (e.g. 25.0)"
+          },
+          "amount_micros": {
+            "type": "integer",
+            "description": "Alternative to amount, in micros"
+          },
+          "name": {
+            "type": "string"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "create_ad_group",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "create_ad_group",
+      "title": "Create ad group",
+      "description": "Create an ad group under a campaign (prerequisite for keywords/ads). Airlocked.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Customer id, digits only"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "cpc_bid_micros": {
+            "type": "integer",
+            "description": "Default CPC bid in micros"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ENABLED",
+              "PAUSED"
+            ],
+            "default": "ENABLED"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "campaign",
+          "name"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "set_budget",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "set_budget",
+      "title": "Set campaign budget",
+      "description": "CHANGES how much this campaign can SPEND per day. Airlocked: preview shows account, campaign, OLD vs NEW daily budget and the delta before it fires — an agent can raise a budget, a human confirms the money.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "amount_micros": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Amount in the account currency, MICROS (1,000,000 = 1 unit). Airlock shows the human-readable amount."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "campaign",
+          "amount_micros"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "set_bid_strategy",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "set_bid_strategy",
+      "title": "Set bidding strategy / target",
+      "description": "Change the campaign's bidding strategy or its target (Target CPA/ROAS or Manual CPC). Raising targets raises spend velocity — airlocked: preview shows OLD vs NEW.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "MANUAL_CPC",
+              "MAXIMIZE_CONVERSIONS",
+              "MAXIMIZE_CONVERSION_VALUE",
+              "TARGET_SPEND"
+            ],
+            "description": "Bidding strategy. Smart strategies need conversion tracking configured."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "campaign",
+          "strategy"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "pause_campaign",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "pause_campaign",
+      "title": "Pause campaign",
+      "description": "STOP a campaign from spending. Airlocked (a wrong pause loses traffic + revenue): preview names the campaign and its current daily budget.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "medium"
+    },
+    {
+      "id": "enable_campaign",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "enable_campaign",
+      "title": "Enable campaign",
+      "description": "RESUME a paused campaign — it starts spending again. Airlocked: preview shows the budget it will resume at.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "campaign"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "create_campaign",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "create_campaign",
+      "title": "Create campaign",
+      "description": "Create a new campaign (paused by default). Airlocked: preview shows type, budget and bidding before it exists.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Campaign name"
+          },
+          "budget_resource": {
+            "type": "string",
+            "description": "Full campaignBudget resource name. Provide this OR budget_id."
+          },
+          "budget_id": {
+            "type": "string",
+            "description": "Existing campaign budget id. Provide this OR budget_resource (create the budget first)."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "name"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "set_ad_group_bid",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "set_ad_group_bid",
+      "title": "Set ad group bid",
+      "description": "Change an ad group's CPC/CPA bid. Airlocked: preview shows OLD vs NEW bid.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "cpc_bid_micros": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New CPC bid in the account currency, MICROS (1,000,000 = 1 unit). Provide this OR cpc_bid."
+          },
+          "cpc_bid": {
+            "type": "number",
+            "minimum": 0,
+            "description": "New CPC bid in the account currency's whole units. Provide this OR cpc_bid_micros."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "pause_ad_group",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "pause_ad_group",
+      "title": "Pause ad group",
+      "description": "Stop an ad group from serving. Airlocked: preview names it and its current bid.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "medium"
+    },
+    {
+      "id": "enable_ad_group",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "enable_ad_group",
+      "title": "Enable ad group",
+      "description": "Resume a paused ad group. Airlocked: preview shows the bid it resumes at.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "add_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "add_keywords",
+      "title": "Add keywords",
+      "description": "Add keywords to an ad group — they can start matching and spending. Airlocked: preview lists every keyword + match type + bid before they go live.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Keyword texts to add."
+          },
+          "match_type": {
+            "type": "string",
+            "enum": [
+              "BROAD",
+              "PHRASE",
+              "EXACT"
+            ],
+            "description": "Match type for all keywords (default BROAD)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ENABLED",
+              "PAUSED"
+            ],
+            "description": "Initial status (default ENABLED)."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "keywords"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "remove_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "remove_keywords",
+      "title": "Remove keywords",
+      "description": "Remove keywords from an ad group (stops their traffic). Airlocked: preview lists what will be removed.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "criterion_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Ad-group-criterion ids to remove (from list_keywords)."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "criterion_ids"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "add_negative_keywords",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "add_negative_keywords",
+      "title": "Add negative keywords",
+      "description": "Exclude search terms at campaign or ad-group level — a common safe cost-control lever. Airlocked: preview lists the negatives.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Negative keyword texts (ad-group level)."
+          },
+          "match_type": {
+            "type": "string",
+            "enum": [
+              "BROAD",
+              "PHRASE",
+              "EXACT"
+            ],
+            "description": "Match type for all negatives (default BROAD)."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "keywords"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "create_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "create_ad",
+      "title": "Create responsive search ad",
+      "description": "Publish a new responsive search ad — becomes publicly visible and eligible to spend. Airlocked: preview shows the full creative + final URL before it goes live.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "headlines": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 15,
+            "items": {
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "descriptions": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "maxLength": 90
+            }
+          },
+          "final_urls": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Landing page URL(s)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ENABLED",
+              "PAUSED"
+            ],
+            "description": "Initial status (default PAUSED)."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "headlines",
+          "descriptions",
+          "final_urls"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "pause_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "pause_ad",
+      "title": "Pause ad",
+      "description": "Stop one ad from serving. Airlocked: preview identifies the ad.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "ad": {
+            "type": "string",
+            "description": "Ad id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "ad"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "medium"
+    },
+    {
+      "id": "enable_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "enable_ad",
+      "title": "Enable ad",
+      "description": "Resume a paused ad. Airlocked: preview identifies the ad.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "ad": {
+            "type": "string",
+            "description": "Ad id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "ad"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "remove_ad",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "remove_ad",
+      "title": "Remove ad",
+      "description": "Permanently remove an ad from its ad group (counterpart to create_ad; pause_ad only stops serving). Airlocked.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Customer id, digits only"
+          },
+          "ad_group": {
+            "type": "string",
+            "description": "Ad group id"
+          },
+          "ad": {
+            "type": "string",
+            "description": "Ad id"
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "ad_group",
+          "ad"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    },
+    {
+      "id": "add_asset",
+      "provider": "google-ads",
+      "requires": [
+        "google-ads"
+      ],
+      "name": "add_asset",
+      "title": "Add asset / extension",
+      "description": "Add a sitelink, callout or structured snippet to the account/campaign. Publicly visible — airlocked: preview shows the asset text and where it attaches.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Google Ads customer id, digits only (e.g. 1234567890)"
+          },
+          "text": {
+            "type": "string",
+            "description": "Asset text (a TEXT asset is created)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional asset name."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "Dry-run: validate against Google (validateOnly) and change nothing. Powers the airlock preview."
+          }
+        },
+        "required": [
+          "account",
+          "text"
+        ]
+      },
+      "side_effects": "external",
+      "mode": "write_requires_approval",
+      "risk": "high"
+    }
+  ],
+  "publisher_pubkey": "9fdc80319ef8b36532af11a4c95590d3c0061dc91fc3c2c43e5ff4f4989cb015",
+  "manifest_version": 2
+}
