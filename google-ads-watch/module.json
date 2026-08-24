@@ -1,10 +1,10 @@
 {
   "id": "marcofgv/google-ads-watch",
   "slug": "google-ads-watch",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "license": "mit",
   "license_required": false,
-  "description": "Ad Spend Watch — free read-only visibility for Google Ads™ (API v25): give your AI agent full read-only visibility into Google Ads: spend, performance, budgets, keywords, negatives, ads, audiences, conversions, assets, the native Google own recommendations, change history, account metadata (currency + test-vs-live) and shared-budget blast radius, plus a SELECT-only GAQL escape hatch. 22 reads, side_effects=none, zero writes — the agent can WATCH runaway spend (get_account_spend_today is the single number to guard) but cannot touch a cent. Egress allowlisted to the Google Ads + OAuth hosts only; credentials via BYOK vault, never logged. The paid companion Google Ads Airlock adds the 18 governed writes behind the RailCall airlock. Status: functional against API v25 with an offline contract test; pending live test-account proof. Independent product; NOT affiliated with, endorsed by, or sponsored by Google LLC. Google Ads is a trademark of Google LLC, used only to describe compatibility. BYOK. Quick start: railcall market install marcofgv/google-ads-watch, save the Google Ads credential in Studio then Integrations (developer_token + OAuth2 client_id/client_secret/refresh_token, or developer_token + access_token — both shapes declared in credential_spec), then run list_campaigns {account: 1234567890} for the account map and get_account_spend_today for the ceiling number. Who it is for: anyone letting an agent near an ad account — ops teams watching client spend, founders running their own ads, agent builders who need a safe read layer before earning write trust. Every command declares mode and risk (financial reads like get_spend, search_gaql and get_change_history are risk:medium; the rest low), the sandbox block declares no subprocess / no filesystem writes / Google hosts only, and get_change_history snaps to the native Google valid 7/14/30-day windows. Known limits: reads only (pausing a runaway needs Airlock), and production accounts need the native Google Basic Access on your developer token — test accounts work instantly.",
+  "description": "Ad Spend Watch — free read-only visibility for Google Ads™ (API v25): give your AI agent full read-only visibility into Google Ads: spend, performance, budgets, keywords, negatives, ads, audiences, conversions, assets, the native Google own recommendations, change history, account metadata (currency + test-vs-live) and shared-budget blast radius, plus a SELECT-only GAQL escape hatch. 22 reads, side_effects=none, zero writes — the agent can WATCH runaway spend (get_account_spend_today is the single number to guard) but cannot touch a cent. Egress allowlisted to the Google Ads + OAuth hosts only; credentials via BYOK vault, never logged. The paid companion Google Ads Airlock adds the 18 governed writes behind the RailCall airlock. Status: reads proven live against a real Google Ads test account (API v25) via the shared handler; a non-serving test account cannot prove delivery metrics, so result shapes are also locked by the offline contract suite. Independent product; NOT affiliated with, endorsed by, or sponsored by Google LLC. Google Ads is a trademark of Google LLC, used only to describe compatibility. BYOK. Quick start: railcall market install marcofgv/google-ads-watch, save the Google Ads credential in Studio then Integrations (developer_token + OAuth2 client_id/client_secret/refresh_token, or developer_token + access_token — both shapes declared in credential_spec), then run list_campaigns {account: 1234567890} for the account map and get_account_spend_today for the ceiling number. Who it is for: anyone letting an agent near an ad account — ops teams watching client spend, founders running their own ads, agent builders who need a safe read layer before earning write trust. Every command declares mode and risk (financial reads like get_spend, search_gaql and get_change_history are risk:medium; the rest low), the sandbox block declares no subprocess / no filesystem writes / Google hosts only, and get_change_history snaps to the native Google valid 7/14/30-day windows. Known limits: reads only (pausing a runaway needs Airlock), and production accounts need the native Google Basic Access on your developer token — test accounts work instantly.",
   "category": "Marketing",
   "provider": "google-ads",
   "credential_spec": {
@@ -189,7 +189,12 @@
       },
       "side_effects": "none",
       "mode": "read",
-      "risk": "medium"
+      "risk": "medium",
+      "schedulable": {
+        "min_interval_minutes": 15,
+        "max_runtime_minutes": 5,
+        "concurrency": "skip"
+      }
     },
     {
       "id": "get_account_spend_today",
@@ -215,7 +220,12 @@
       },
       "side_effects": "none",
       "mode": "read",
-      "risk": "medium"
+      "risk": "medium",
+      "schedulable": {
+        "min_interval_minutes": 15,
+        "max_runtime_minutes": 5,
+        "concurrency": "skip"
+      }
     },
     {
       "id": "list_ad_groups",
@@ -588,6 +598,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Max events to return (default 200)."
+          },
+          "since": {
+            "type": "string",
+            "description": "Optional ISO timestamp (YYYY-MM-DD HH:MM:SS); when set, returns changes at or after it (bounded to the API 30-day window). Used by the incremental scheduler."
           }
         },
         "required": [
@@ -596,7 +610,20 @@
       },
       "side_effects": "none",
       "mode": "read",
-      "risk": "medium"
+      "risk": "medium",
+      "schedulable": {
+        "min_interval_minutes": 15,
+        "max_runtime_minutes": 5,
+        "concurrency": "skip"
+      },
+      "incremental": {
+        "since_param": "since",
+        "items_field": "changes",
+        "watermark_from": "when",
+        "watermark_type": "timestamp",
+        "initial": "now",
+        "lookback_seconds": 300
+      }
     },
     {
       "id": "search_gaql",

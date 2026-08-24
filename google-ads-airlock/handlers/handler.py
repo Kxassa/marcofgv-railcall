@@ -559,11 +559,28 @@ def get_change_history(inputs, context):
     # change_event REQUIRES a LIMIT and a bounded change_date_time window in v25.
     days = min((7, 14, 30), key=lambda d: abs(d - int(inputs.get("days", 14))))  # GAQL enum
     limit = int(inputs.get("limit", 200))
+    since = inputs.get("since")
+    if since:
+        # Incremental path: bounded BETWEEN window from a validated ISO timestamp.
+        # Strict format check (no quotes/GAQL metachars can pass) + 29-day floor,
+        # because v25 caps the change_event window at 30 days.
+        import re as _re, datetime as _dt
+        m = _re.fullmatch(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?", str(since))
+        if not m:
+            raise GAdsError("since must be an ISO timestamp (YYYY-MM-DD HH:MM:SS).")
+        lo = _dt.datetime.strptime(m.group(1) + " " + m.group(2), "%Y-%m-%d %H:%M:%S")
+        floor = _dt.datetime.utcnow() - _dt.timedelta(days=29)
+        if lo < floor:
+            lo = floor
+        window = ("BETWEEN '" + lo.strftime("%Y-%m-%d %H:%M:%S") + "' AND '"
+                  + _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") + "'")
+    else:
+        window = f"DURING LAST_{days}_DAYS"
     rows = _search(inputs["account"],
         "SELECT change_event.change_date_time, change_event.user_email, "
         "change_event.client_type, change_event.change_resource_type, "
         "change_event.resource_change_operation "
-        f"FROM change_event WHERE change_event.change_date_time DURING LAST_{days}_DAYS "
+        f"FROM change_event WHERE change_event.change_date_time {window} "
         f"ORDER BY change_event.change_date_time DESC LIMIT {limit}")
     out = [{"when": (r.get("changeEvent") or {}).get("changeDateTime"),
             "user": (r.get("changeEvent") or {}).get("userEmail"),
