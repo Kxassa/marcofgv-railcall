@@ -1,9 +1,9 @@
 {
   "id": "marcofgv/freelancer-daily-bidder",
   "schema_version": "1.0",
-  "version": "v1.2.1",
+  "version": "v1.3.0",
   "title": "Freelancer daily bidder (airlocked)",
-  "description": "A governed daily bidding loop on top of the Freelancer.com module, built on the one architecture that survives. Reported industry data is blunt: bots that automate the submit click get banned in under six months and cost the average account ~US$47k/yr, while tools that automate search-and-drafting but keep a human on the submit survive 3+ years (GigRadar). This workflow automates exactly the two expensive-but-safe steps. The scout starts from get_notifications (what already happened - a client replied, awarded, or hired), dedupes against bids already placed, picks the daily best-fit project, and reads competitor bids with get_bids so the proposal is priced against the field - then it stops at the airlock: place_bid runs preview then approve then execute then signed receipt, so a human approves the exact amount, currency, timeline and wording before anything reaches a client. The machine does the searching, the pricing and the writing; the person keeps the yes. Prompt-injection safe by construction (Rule-of-Two): the scout reads untrusted client briefs but holds no write tool, and the only node that can spend money holds no untrusted text. Runnable by construction: ships an engine_spec (three typed agent nodes chained scout then draft then bid) so the DAG engine executes it with per-node signed receipts, plus module_dependency on marcofgv/freelancer-com (minimum_version enforced at install) and a capabilities block with max_spend_cents:50 — the engines hard floor keeps every spend behind require_human regardless. Quick start: install marcofgv/freelancer-com, install this workflow, set context.query (e.g. python automation) and context.min_budget, run from the Workflows tab; the run stops at the place_bid airlock card with amount, currency, timeline and full proposal text. Who it is for: freelancers who already bid daily and want the 40 minutes of scanning, pricing and drafting automated without ever handing a bot the submit click. Honest limits: bids are denominated in the project own currency (the airlock preview is where you check the amount — that check is the point), and a mid-loop suspend/resume on a pending approval is the documented partial-progress slice. contest:2026Q3",
+  "description": "A governed daily bidding loop on top of the Freelancer.com module, built on the one architecture that survives. Reported industry data is blunt: bots that automate the submit click get banned in under six months and cost the average account ~US$47k/yr, while tools that automate search-and-drafting but keep a human on the submit survive 3+ years (GigRadar). This workflow automates exactly the two expensive-but-safe steps, with pure transform guards between every agent hop: validate_pick re-checks the scouts pick against context (untrusted briefs never become trusted arithmetic), bid_plan is the execution guard that arms place_bid only for a bounded draft, and reconcile compares planned vs placed amount so a mismatch is a first-class outcome. The scout starts from get_notifications (what already happened - a client replied, awarded, or hired), dedupes against bids already placed, picks the daily best-fit project, and reads competitor bids with get_bids so the proposal is priced against the field - then it stops at the airlock: place_bid runs preview then approve then execute then signed receipt, so a human approves the exact amount, currency, timeline and wording before anything reaches a client. The machine does the searching, the pricing and the writing; the person keeps the yes. Prompt-injection safe by construction (Rule-of-Two): the scout reads untrusted client briefs but holds no write tool, and the only node that can spend money holds no untrusted text. Runnable by construction: ships an engine_spec (three typed agent nodes chained scout then draft then bid) so the DAG engine executes it with per-node signed receipts, plus module_dependency on marcofgv/freelancer-com (minimum_version enforced at install) and a capabilities block with max_spend_cents:50 — the engines hard floor keeps every spend behind require_human regardless. Quick start: install marcofgv/freelancer-com, install this workflow, set context.query (e.g. python automation) and context.min_budget, run from the Workflows tab; the run stops at the place_bid airlock card with amount, currency, timeline and full proposal text. Who it is for: freelancers who already bid daily and want the 40 minutes of scanning, pricing and drafting automated without ever handing a bot the submit click. Honest limits: bids are denominated in the project own currency (the airlock preview is where you check the amount — that check is the point), and a mid-loop suspend/resume on a pending approval is the documented partial-progress slice. contest:2026Q3",
   "category": "Revenue",
   "prerequisites": "Install the marcofgv/freelancer-com module and save the Freelancer OAuth token in Studio -> Integrations (vault; generate it at accounts.freelancer.com/settings/develop). Optional: base_url=https://www.freelancer-sandbox.com in the same credential to rehearse against the sandbox. Tool ids use the canonical installed-module action_id form (marcofgv-freelancer-com_*), which is what integration_registry emits at module load - measured on station-v0.78, not assumed. At the bid airlock the operator sees: project title, bid amount WITH currency, delivery period, full proposal text, the competitor low/high/avg for context, and the bid-credit cost - and approves in the terminal (never the browser) before place_bid fires. Receipts, honestly stated: this spec now MINTS A SIGNED PLAN RECEIPT - plan_workflow gained an agent-node branch in the station-v0.74 batch (fixing community bug #27, which we reported: agent nodes previously planned as blocked plan_error, making agent workflows unapprovable). Verified on station-v0.78 with this exact spec: both agent nodes plan as require_human with the tool blast radius enumerated, spend is bounded by the declared budgets, and the workflow root is Ed25519-signed. A full dag-RUN receipt still requires a live model in the station runtime plus a real airlocked bid the operator approves; mid-loop suspend/resume for a pending approval remains the documented partial-progress slice. The governance claims here - Rule-of-Two, airlock, empty-scout cond-guard, scout retry - are all readable from this spec and were validated by the marketplace lint at publish.",
   "module_dependency": {
@@ -46,6 +46,17 @@
       }
     },
     {
+      "id": "validate_pick",
+      "type": "transform",
+      "parent": "scout",
+      "branch": "prepare",
+      "input_from": {
+        "scout": "{{nodes.scout.output}}",
+        "cfg": "{{ctx}}"
+      },
+      "code": "# Pure gate between the scout and the drafter. The scout reads UNTRUSTED\n# client briefs, so nothing it says is trusted arithmetic: re-check the pick\n# against the workflow context before any drafting happens.\ns = input.get(\"scout\") if isinstance(input, dict) else None\ncfg = input.get(\"cfg\") if isinstance(input, dict) else None\ns = s if isinstance(s, dict) else {}\ncfg = cfg if isinstance(cfg, dict) else {}\nreasons = []\npid = s.get(\"project_id\")\nif not pid:\n    reasons.append(\"no project_id from scout\")\ntitle = s.get(\"title\") or \"\"\ncurrency = s.get(\"currency\") or \"\"\nif not currency:\n    reasons.append(\"scout did not report the project currency\")\nb = s.get(\"budget_min\")\nif b is None:\n    b = s.get(\"budget\")\nbudget = b if isinstance(b, (int, float)) and not isinstance(b, bool) else 0\nmb = cfg.get(\"min_budget\")\nmin_budget = mb if isinstance(mb, (int, float)) and not isinstance(mb, bool) else 0\nif budget and budget < min_budget:\n    reasons.append(\"budget below ctx.min_budget\")\nif s.get(\"already_bid\"):\n    reasons.append(\"scout marked project as already bid\")\noutput = {\n    \"ready\": len(reasons) == 0 and bool(pid),\n    \"reasons\": reasons,\n    \"project_id\": pid,\n    \"title\": title,\n    \"currency\": currency,\n    \"budget\": budget,\n    \"attention\": s.get(\"attention\"),\n}"
+    },
+    {
       "id": "draft",
       "type": "agent",
       "model": "primary",
@@ -59,7 +70,19 @@
         "max_spend_cents": 5,
         "timeout_s": 120
       },
-      "cond": "{{nodes.scout.output.project_id}}"
+      "cond": "{{nodes.validate_pick.ready}}",
+      "parent": "validate_pick"
+    },
+    {
+      "id": "bid_plan",
+      "type": "transform",
+      "parent": "draft",
+      "branch": "approve",
+      "input_from": {
+        "draft": "{{nodes.draft.output}}",
+        "pick": "{{nodes.validate_pick.output}}"
+      },
+      "code": "# Execution guard between the drafter and the one node that can spend.\n# The drafter holds no tools; this transform is the last PURE check before\n# the airlocked place_bid: bound the proposal, carry the currency forward,\n# and refuse to arm execution on an empty or oversized draft.\nd = input.get(\"draft\") if isinstance(input, dict) else None\nv = input.get(\"pick\") if isinstance(input, dict) else None\nd = d if isinstance(d, dict) else {}\nv = v if isinstance(v, dict) else {}\nproposal = str(d.get(\"proposal\") or d.get(\"text\") or \"\")\namount = d.get(\"amount\")\namount_ok = isinstance(amount, (int, float)) and not isinstance(amount, bool) and amount > 0\nproblems = []\nif not v.get(\"ready\"):\n    problems.append(\"validate_pick did not clear the project\")\nif len(proposal) < 80:\n    problems.append(\"proposal under 80 chars\")\nif len(proposal) > 1500:\n    problems.append(\"proposal over 1500 chars\")\nif not amount_ok:\n    problems.append(\"no positive numeric bid amount drafted\")\nif not v.get(\"currency\"):\n    problems.append(\"no currency to denominate the bid\")\noutput = {\n    \"execution_ready\": len(problems) == 0,\n    \"problems\": problems,\n    \"project_id\": v.get(\"project_id\"),\n    \"amount\": amount if amount_ok else None,\n    \"currency\": v.get(\"currency\"),\n    \"proposal_chars\": len(proposal),\n}"
     },
     {
       "id": "bid",
@@ -77,23 +100,47 @@
         "max_spend_cents": 5,
         "timeout_s": 120
       },
-      "cond": "{{nodes.draft.output.amount}}"
+      "cond": "{{nodes.bid_plan.execution_ready}}",
+      "parent": "bid_plan"
+    },
+    {
+      "id": "reconcile",
+      "type": "transform",
+      "parent": "bid",
+      "branch": "reconcile",
+      "input_from": {
+        "plan": "{{nodes.bid_plan.output}}",
+        "bid": "{{nodes.bid.output}}"
+      },
+      "code": "# After the airlock: reconcile what was PLANNED against what the bid agent\n# REPORTS, so a mismatch is a first-class outcome instead of a silent success.\np = input.get(\"plan\") if isinstance(input, dict) else None\nb = input.get(\"bid\") if isinstance(input, dict) else None\np = p if isinstance(p, dict) else {}\nb = b if isinstance(b, dict) else {}\nplaced = b.get(\"bid_id\") or b.get(\"placed\")\nplanned_amount = p.get(\"amount\")\nplaced_amount = b.get(\"amount\")\npn = isinstance(planned_amount, (int, float)) and not isinstance(planned_amount, bool)\nbn = isinstance(placed_amount, (int, float)) and not isinstance(placed_amount, bool)\nif not p.get(\"execution_ready\"):\n    status = \"skipped_by_guard\"\nelif not placed:\n    status = \"not_placed\"\nelif not (pn and bn) or placed_amount != planned_amount:\n    status = \"amount_mismatch\"\nelse:\n    status = \"placed\"\noutput = {\n    \"status\": status,\n    \"planned_amount\": planned_amount,\n    \"placed_amount\": placed_amount,\n    \"currency\": p.get(\"currency\"),\n    \"project_id\": p.get(\"project_id\"),\n}"
     }
   ],
   "edges": [
     {
       "from": "scout",
+      "to": "validate_pick"
+    },
+    {
+      "from": "validate_pick",
       "to": "draft"
     },
     {
       "from": "draft",
+      "to": "bid_plan"
+    },
+    {
+      "from": "bid_plan",
       "to": "bid"
+    },
+    {
+      "from": "bid",
+      "to": "reconcile"
     }
   ],
   "engine_spec": {
     "id": "marcofgv/freelancer-daily-bidder",
     "title": "Freelancer daily bidder (airlocked)",
-    "version": "v1.2.1",
+    "version": "v1.3.0",
     "context": {
       "query": "python automation",
       "min_budget": 200,
@@ -133,6 +180,17 @@
         }
       },
       {
+        "id": "validate_pick",
+        "type": "transform",
+        "parent": "scout",
+        "branch": "prepare",
+        "input_from": {
+          "scout": "{{nodes.scout.output}}",
+          "cfg": "{{ctx}}"
+        },
+        "code": "# Pure gate between the scout and the drafter. The scout reads UNTRUSTED\n# client briefs, so nothing it says is trusted arithmetic: re-check the pick\n# against the workflow context before any drafting happens.\ns = input.get(\"scout\") if isinstance(input, dict) else None\ncfg = input.get(\"cfg\") if isinstance(input, dict) else None\ns = s if isinstance(s, dict) else {}\ncfg = cfg if isinstance(cfg, dict) else {}\nreasons = []\npid = s.get(\"project_id\")\nif not pid:\n    reasons.append(\"no project_id from scout\")\ntitle = s.get(\"title\") or \"\"\ncurrency = s.get(\"currency\") or \"\"\nif not currency:\n    reasons.append(\"scout did not report the project currency\")\nb = s.get(\"budget_min\")\nif b is None:\n    b = s.get(\"budget\")\nbudget = b if isinstance(b, (int, float)) and not isinstance(b, bool) else 0\nmb = cfg.get(\"min_budget\")\nmin_budget = mb if isinstance(mb, (int, float)) and not isinstance(mb, bool) else 0\nif budget and budget < min_budget:\n    reasons.append(\"budget below ctx.min_budget\")\nif s.get(\"already_bid\"):\n    reasons.append(\"scout marked project as already bid\")\noutput = {\n    \"ready\": len(reasons) == 0 and bool(pid),\n    \"reasons\": reasons,\n    \"project_id\": pid,\n    \"title\": title,\n    \"currency\": currency,\n    \"budget\": budget,\n    \"attention\": s.get(\"attention\"),\n}"
+      },
+      {
         "id": "draft",
         "type": "agent",
         "model": "primary",
@@ -146,8 +204,19 @@
           "max_spend_cents": 5,
           "timeout_s": 120
         },
-        "cond": "{{nodes.scout.output.project_id}}",
-        "parent": "scout"
+        "cond": "{{nodes.validate_pick.ready}}",
+        "parent": "validate_pick"
+      },
+      {
+        "id": "bid_plan",
+        "type": "transform",
+        "parent": "draft",
+        "branch": "approve",
+        "input_from": {
+          "draft": "{{nodes.draft.output}}",
+          "pick": "{{nodes.validate_pick.output}}"
+        },
+        "code": "# Execution guard between the drafter and the one node that can spend.\n# The drafter holds no tools; this transform is the last PURE check before\n# the airlocked place_bid: bound the proposal, carry the currency forward,\n# and refuse to arm execution on an empty or oversized draft.\nd = input.get(\"draft\") if isinstance(input, dict) else None\nv = input.get(\"pick\") if isinstance(input, dict) else None\nd = d if isinstance(d, dict) else {}\nv = v if isinstance(v, dict) else {}\nproposal = str(d.get(\"proposal\") or d.get(\"text\") or \"\")\namount = d.get(\"amount\")\namount_ok = isinstance(amount, (int, float)) and not isinstance(amount, bool) and amount > 0\nproblems = []\nif not v.get(\"ready\"):\n    problems.append(\"validate_pick did not clear the project\")\nif len(proposal) < 80:\n    problems.append(\"proposal under 80 chars\")\nif len(proposal) > 1500:\n    problems.append(\"proposal over 1500 chars\")\nif not amount_ok:\n    problems.append(\"no positive numeric bid amount drafted\")\nif not v.get(\"currency\"):\n    problems.append(\"no currency to denominate the bid\")\noutput = {\n    \"execution_ready\": len(problems) == 0,\n    \"problems\": problems,\n    \"project_id\": v.get(\"project_id\"),\n    \"amount\": amount if amount_ok else None,\n    \"currency\": v.get(\"currency\"),\n    \"proposal_chars\": len(proposal),\n}"
       },
       {
         "id": "bid",
@@ -165,8 +234,19 @@
           "max_spend_cents": 5,
           "timeout_s": 120
         },
-        "cond": "{{nodes.draft.output.amount}}",
-        "parent": "draft"
+        "cond": "{{nodes.bid_plan.execution_ready}}",
+        "parent": "bid_plan"
+      },
+      {
+        "id": "reconcile",
+        "type": "transform",
+        "parent": "bid",
+        "branch": "reconcile",
+        "input_from": {
+          "plan": "{{nodes.bid_plan.output}}",
+          "bid": "{{nodes.bid.output}}"
+        },
+        "code": "# After the airlock: reconcile what was PLANNED against what the bid agent\n# REPORTS, so a mismatch is a first-class outcome instead of a silent success.\np = input.get(\"plan\") if isinstance(input, dict) else None\nb = input.get(\"bid\") if isinstance(input, dict) else None\np = p if isinstance(p, dict) else {}\nb = b if isinstance(b, dict) else {}\nplaced = b.get(\"bid_id\") or b.get(\"placed\")\nplanned_amount = p.get(\"amount\")\nplaced_amount = b.get(\"amount\")\npn = isinstance(planned_amount, (int, float)) and not isinstance(planned_amount, bool)\nbn = isinstance(placed_amount, (int, float)) and not isinstance(placed_amount, bool)\nif not p.get(\"execution_ready\"):\n    status = \"skipped_by_guard\"\nelif not placed:\n    status = \"not_placed\"\nelif not (pn and bn) or placed_amount != planned_amount:\n    status = \"amount_mismatch\"\nelse:\n    status = \"placed\"\noutput = {\n    \"status\": status,\n    \"planned_amount\": planned_amount,\n    \"placed_amount\": placed_amount,\n    \"currency\": p.get(\"currency\"),\n    \"project_id\": p.get(\"project_id\"),\n}"
       }
     ]
   }
