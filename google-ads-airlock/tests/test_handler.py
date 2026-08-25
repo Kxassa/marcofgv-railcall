@@ -21,6 +21,16 @@ import types
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "handlers"))
 import handler as H
 
+# --- station execution contract --------------------------------------------
+# The shipped bundle wraps every command so the station's dispatcher can do
+# `output, artifact = handler(inputs, stamp)` (routes/commands.py unpacks a 2-tuple).
+# These contract tests exercise the command LOGIC, so capture the wrappers, then
+# unwrap for the rest of the file; the wrapper itself is asserted in test_tuple_contract.
+_RC_WRAPPED = {n: f for n, f in list(vars(H).items())
+               if callable(f) and hasattr(f, "__wrapped__")}
+for _n, _f in _RC_WRAPPED.items():
+    setattr(H, _n, _f.__wrapped__)
+
 # --- test harness: capture the network layer -------------------------------
 
 _CALLS = {"request": [], "get": []}
@@ -60,6 +70,20 @@ _PASS = []
 _FAIL = []
 
 
+def test_tuple_contract():
+    """Every command the manifest declares must be wrapped to return (output, artifact),
+    or the station fails with 'too many values to unpack' AFTER the operator approved."""
+    import json
+    man = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "module.json")
+    ids = [c["id"].split(".")[-1].replace("-", "_") for c in json.load(open(man))["commands"]]
+    missing = [i for i in ids if i not in _RC_WRAPPED]
+    check("every manifest command is wrapped for the station dispatcher", not missing, str(missing[:5]))
+    probe = H._rc_tuple_adapter(lambda inputs, context=None: {"ok": True})
+    check("wrapper returns a 2-tuple", probe({}, None) == ({"ok": True}, None))
+    passthrough = H._rc_tuple_adapter(lambda inputs, context=None: ({"ok": True}, "artifact"))
+    check("wrapper leaves an existing tuple alone", passthrough({}, None) == ({"ok": True}, "artifact"))
+
+
 def check(name, cond, detail=""):
     (_PASS if cond else _FAIL).append(name)
     mark = "ok  " if cond else "FAIL"
@@ -83,11 +107,21 @@ def test_helpers():
           H._res("1-2-3", "campaigns", 7) == "customers/123/campaigns/7")
     check("flag parses truthy strings", H._flag({"v": "true"}, "v") is True)
     check("flag parses falsey", H._flag({"v": "no"}, "v") is False)
-    # redaction: a secret in the env must not survive into an error string
-    import os
-    os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "SUPERSECRETDEVTOKEN"
-    red = H._redact("boom SUPERSECRETDEVTOKEN boom")
-    check("redacts developer token", "SUPERSECRETDEVTOKEN" not in red, red)
+    # Redaction: a secret must not survive into an error string. _gads_creds() reads the
+    # RailCall vault ONLY — never os.environ, by design — so stub the vault, which is what
+    # the shipped code actually consults. (The old version of this check set an env var and
+    # could never pass; it was testing a path this handler deliberately does not have.)
+    _orig_creds = H._gads_creds
+    H._gads_creds = lambda: {"developer_token": "SUPERSECRETDEVTOKEN",
+                             "refresh_token": "RT-abcdef123456",
+                             "client_secret": "CS-zyxwvu987654"}
+    try:
+        red = H._redact("boom SUPERSECRETDEVTOKEN boom RT-abcdef123456 and CS-zyxwvu987654")
+        check("redacts developer token", "SUPERSECRETDEVTOKEN" not in red, red)
+        check("redacts refresh token", "RT-abcdef123456" not in red, red)
+        check("redacts client secret", "CS-zyxwvu987654" not in red, red)
+    finally:
+        H._gads_creds = _orig_creds
 
 
 # --- dispatch table ---------------------------------------------------------
@@ -338,7 +372,7 @@ def test_writes():
 
 
 def main():
-    for t in (test_helpers, test_dispatch_table, test_reads, test_safety_reads, test_writes):
+    for t in (test_tuple_contract, test_helpers, test_dispatch_table, test_reads, test_safety_reads, test_writes):
         t()
     total = len(_PASS) + len(_FAIL)
     print(f"\n{len(_PASS)}/{total} passed")

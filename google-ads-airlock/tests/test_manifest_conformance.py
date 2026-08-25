@@ -10,8 +10,7 @@ import handler as H
 MANIFEST = os.path.join(os.path.dirname(__file__), "..", "module.json")
 
 def _minimal(schema):
-    props = schema.get("properties", {})
-    req = list(schema.get("required", []))
+    props, req = _props_req(schema)
     # for the "one of two" writes, also fill one optional partner so the happy path runs
     extra = {"create_campaign": ["budget_id"], "set_ad_group_bid": ["cpc_bid_micros"]}
     inp = {}
@@ -19,8 +18,21 @@ def _minimal(schema):
         inp[name] = _dummy(props.get(name, {}), name)
     return inp, props
 
+
+def _props_req(schema):
+    """Accept both manifest shapes: JSON Schema {type, properties, required[]} and the flat
+    name->spec map the station's validator actually requires (what we ship since the 0.x.6
+    line). Keeping both keeps this test honest against either bundle."""
+    schema = schema or {}
+    if "properties" in schema or schema.get("type") == "object":
+        return (schema.get("properties") or {}), list(schema.get("required") or [])
+    props = {n: s for n, s in schema.items() if isinstance(s, dict)}
+    return props, [n for n, s in props.items() if s.get("required")]
+
 def _dummy(spec, name):
     t = spec.get("type")
+    if t is None and str(spec.get("description", "")).lower().startswith("true or false"):
+        return True
     if t == "array":
         it = (spec.get("items") or {}).get("type", "string")
         n = max(1, spec.get("minItems", 1))

@@ -706,3 +706,23 @@ def upload_project_file(inputs, context):
     except urllib.error.HTTPError as exc:
         raise FlnError(f"Freelancer API {exc.code}: project file upload failed")
     return {"uploaded": True, "project_id": inputs["project_id"], "file": filename}
+
+
+# ---- station execution-contract adapter -------------------------------------
+# routes/commands.py unpacks a handler result as `output, artifact = handler(inputs, stamp)`,
+# while the workflow engine accepts a bare dict. Every command below returns a dict, so wrap
+# them once, here, instead of touching every function body.
+def _rc_tuple_adapter(_fn):
+    def _wrapped(inputs, context=None):
+        _r = _fn(inputs, context)
+        return _r if isinstance(_r, tuple) else (_r, None)
+    _wrapped.__name__ = getattr(_fn, "__name__", "cmd")
+    _wrapped.__doc__ = getattr(_fn, "__doc__", None)
+    _wrapped.__wrapped__ = _fn
+    return _wrapped
+
+for _rc_name in ["accept_bid", "accept_milestone_request", "add_skills", "award_bid", "cancel_milestone", "create_hourly_project", "create_milestone", "create_project", "delete_milestone_request", "get_balance", "get_bid", "get_bids", "get_categories", "get_contest", "get_countries", "get_currencies", "get_jobs", "get_messages", "get_milestone", "get_my_skills", "get_notifications", "get_portfolio", "get_project", "get_project_reviews", "get_reputation", "get_threads", "get_timezones", "get_tracking", "get_user", "highlight_bid", "list_milestone_requests", "list_milestones", "list_my_bids", "list_my_contests", "list_my_projects", "mark_thread_read", "place_bid", "post_review", "reject_milestone_request", "release_milestone", "remove_skills", "report_project", "request_milestone", "request_release_milestone", "retract_bid", "revoke_bid", "search_contests", "search_freelancers", "search_jobs", "search_messages", "search_projects", "send_attachment", "send_message", "set_skills", "start_thread", "start_tracking", "update_bid", "update_tracking", "upload_project_file", "whoami"]:
+    _rc_obj = globals().get(_rc_name)
+    if callable(_rc_obj) and not hasattr(_rc_obj, "__wrapped__"):
+        globals()[_rc_name] = _rc_tuple_adapter(_rc_obj)
+del _rc_name, _rc_obj

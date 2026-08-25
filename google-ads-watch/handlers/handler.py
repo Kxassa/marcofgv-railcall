@@ -1002,3 +1002,23 @@ LOCAL_HANDLERS = {
     "pause_ad": pause_ad, "enable_ad": enable_ad, "remove_ad": remove_ad,
     "add_asset": add_asset,
 }
+
+
+# ---- station execution-contract adapter -------------------------------------
+# routes/commands.py unpacks a handler result as `output, artifact = handler(inputs, stamp)`,
+# while the workflow engine accepts a bare dict. Every command below returns a dict, so wrap
+# them once, here, instead of touching every function body.
+def _rc_tuple_adapter(_fn):
+    def _wrapped(inputs, context=None):
+        _r = _fn(inputs, context)
+        return _r if isinstance(_r, tuple) else (_r, None)
+    _wrapped.__name__ = getattr(_fn, "__name__", "cmd")
+    _wrapped.__doc__ = getattr(_fn, "__doc__", None)
+    _wrapped.__wrapped__ = _fn
+    return _wrapped
+
+for _rc_name in ["add_asset", "add_keywords", "add_negative_keywords", "create_ad", "create_ad_group", "create_budget", "create_campaign", "enable_ad", "enable_ad_group", "enable_campaign", "get_account_metadata", "get_account_spend_today", "get_ad", "get_ad_group", "get_budget", "get_campaign", "get_change_history", "get_conversion_stats", "get_recommendations", "get_search_terms", "get_spend", "list_accessible_customers", "list_ad_groups", "list_ads", "list_assets", "list_audiences", "list_budget_campaigns", "list_campaigns", "list_conversion_actions", "list_keywords", "list_negative_keywords", "pause_ad", "pause_ad_group", "pause_campaign", "remove_ad", "remove_keywords", "search_gaql", "set_ad_group_bid", "set_bid_strategy", "set_budget"]:
+    _rc_obj = globals().get(_rc_name)
+    if callable(_rc_obj) and not hasattr(_rc_obj, "__wrapped__"):
+        globals()[_rc_name] = _rc_tuple_adapter(_rc_obj)
+del _rc_name, _rc_obj
