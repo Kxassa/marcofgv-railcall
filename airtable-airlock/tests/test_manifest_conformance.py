@@ -67,7 +67,7 @@ REAL_OPEN = H._OPENER.open        # a costura e o opener, nao urlopen:
 calls = {"n": 0}
 
 
-def fake_call(method, path, params=None, body=None):
+def fake_call(method, path, params=None, body=None, settle_hint=None):
     calls["n"] += 1
     if path.endswith("/tables"):
         return {"tables": [{"id": "tblAAAAAAAAAAAAAA", "name": "Tasks",
@@ -262,6 +262,49 @@ check("sem subprocess", "subprocess" not in imported and "subprocess" not in nam
 # HTTP. A pergunta real e se open() e CHAMADO pelo nome.
 check("sem escrita em disco (open() nunca e chamado)", "open" not in calls_made,
       "chamadas por nome: %s" % sorted(calls_made))
+
+print("\n7b. Desfecho indeterminado e escrita concorrente (CONTROLES que devem DISPARAR)")
+# Sem estes dois, o detector de concorrencia e o terceiro desfecho seriam codigo
+# que nunca acusa nada — exatamente o que a suite verde de 82/82 era antes.
+def concurrent_call(method, path, params=None, body=None, settle_hint=None):
+    if method == "GET":
+        return {"id": "recAAAAAAAAAAAAAA", "fields": {"Status": "old", "Owner": "ana"}}
+    return {"id": "recAAAAAAAAAAAAAA", "fields": {"Status": "new", "Owner": "OUTRA PESSOA"}}
+
+H._call = concurrent_call
+out, _ = H.airtable_update_record({"base_id": "appAAAAAAAAAAAAAA", "table": "Tasks",
+                                   "record_id": "recAAAAAAAAAAAAAA",
+                                   "fields": {"Status": "new"}}, None)
+check("CONTROLE: campo que EU nao escrevi mudou -> concurrent_modification",
+      out.get("concurrent_modification") is True and out.get("fields_changed_by_someone_else") == ["Owner"],
+      str(out.get("fields_changed_by_someone_else")))
+check("previous ainda descreve o que NOS sobrescrevemos", out["previous"] == {"Status": "old"})
+
+def quiet_call(method, path, params=None, body=None, settle_hint=None):
+    return {"id": "recAAAAAAAAAAAAAA", "fields": {"Status": "old" if method == "GET" else "new",
+                                                  "Owner": "ana"}}
+
+H._call = quiet_call
+out, _ = H.airtable_update_record({"base_id": "appAAAAAAAAAAAAAA", "table": "Tasks",
+                                   "record_id": "recAAAAAAAAAAAAAA",
+                                   "fields": {"Status": "new"}}, None)
+check("e NAO acusa quando ninguem mexeu (sem falso positivo)",
+      "concurrent_modification" not in out)
+
+# terceiro desfecho: falha de rede DEPOIS do envio nao pode virar "nao aconteceu"
+def dropped(req, timeout=None):
+    raise urllib.error.URLError("connection reset")
+
+H._call = REAL_CALL
+H._OPENER.open = dropped
+must_raise("CONTROLE: POST com conexao caida -> AirtableIndeterminate",
+           lambda: H._call("POST", "/v0/appX/T", body={}, settle_hint="verifique antes de repetir"),
+           H.AirtableIndeterminate, "MAY have been applied")
+must_raise("  e um GET continua sendo erro comum, nao indeterminado",
+           lambda: H._call("GET", "/v0/meta/bases"), H.AirtableError, "network error")
+check("AirtableIndeterminate NAO e confundivel com falha", 
+      not isinstance(H.AirtableError("x"), H.AirtableIndeterminate))
+H._OPENER.open = REAL_OPEN
 
 print("\n8. Manifesto x contrato tecnico")
 ids = [c["id"] for c in MANIFEST["commands"]]
