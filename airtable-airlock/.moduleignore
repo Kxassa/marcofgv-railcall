@@ -1,0 +1,3 @@
+# never ship backups or scratch
+*.bak
+*.bak.*
