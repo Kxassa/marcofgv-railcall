@@ -476,5 +476,7 @@
   ],
   "homepage": "https://github.com/Kxassa/marcofgv-railcall/tree/main/airtable-airlock",
   "tests_url": "https://github.com/Kxassa/marcofgv-railcall/blob/main/airtable-airlock/tests/test_manifest_conformance.py",
-  "video_url": null
+  "video_url": null,
+  "manifest_version": 2,
+  "publisher_pubkey": "9fdc80319ef8b36532af11a4c95590d3c0061dc91fc3c2c43e5ff4f4989cb015"
 }
